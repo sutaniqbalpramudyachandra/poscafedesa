@@ -92,7 +92,7 @@ export async function enqueueTransaction(localTx: LocalTransaction): Promise<num
 }
 
 export async function getPendingQueue(): Promise<QueueItem[]> {
-  const all = await tx(STORE_QUEUE, 'readonly', (s) => s.getAll()) as QueueItem[];
+  const all = (await tx(STORE_QUEUE, 'readonly', (s) => s.getAll())) as QueueItem[];
   return all.filter((i) => i.status === 'pending' || i.status === 'failed');
 }
 
@@ -144,6 +144,7 @@ export type LocalTransactionItem = {
   product_name: string;
   qty: number;
   price: number;
+  cost_price?: number; // <--- DITAMBAHKAN: Harga modal item
   subtotal: number;
 };
 
@@ -177,6 +178,7 @@ export type ProductCache = {
   name: string;
   category: string;
   price: number;
+  cost_price?: number; // <--- DITAMBAHKAN: Harga modal produk di cache
   image_url: string | null;
   is_active: boolean;
   stock: number;

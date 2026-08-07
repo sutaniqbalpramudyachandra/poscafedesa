@@ -2,7 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, type Product, type TransactionWithItems, type AppSettings } from '@/lib/supabase';
 import { formatRupiah, formatDateTime } from '@/lib/format';
 import { generateReceiptDataURL, downloadReceiptImage } from '@/lib/receipt';
-import { cacheProducts, getCachedProducts, enqueueTransaction, saveLocalTransaction, type LocalTransaction, type LocalTransactionItem } from '@/lib/db';
+import { 
+  cacheProducts, 
+  getCachedProducts, 
+  enqueueTransaction, 
+  saveLocalTransaction, 
+  type LocalTransaction, 
+  type LocalTransactionItem 
+} from '@/lib/db';
+import { useOfflineSync } from '@/hooks/useOfflineSync'; // <--- DITAMBAHKAN HOOK SINKRONISASI
 import {
   Search,
   Plus,
@@ -643,6 +651,9 @@ function CheckoutModal({
   setProcessing,
   settings,
 }: CheckoutModalProps) {
+  // Hook sinkronisasi offline-first
+  const { isOnline } = useOfflineSync();
+
   const [paymentMethod, setPaymentMethod] = useState<'Tunai' | 'QRIS'>('Tunai');
   const [payMode, setPayMode] = useState<'now' | 'later'>('now');
   const [tableNumber, setTableNumber] = useState('');
@@ -712,7 +723,7 @@ function CheckoutModal({
     }
   };
 
-  const handleCheckout = async () => {
+ const handleCheckout = async () => {
     setError(null);
 
     if (cart.length === 0) {
@@ -758,7 +769,8 @@ function CheckoutModal({
         synced: false,
       };
 
-      if (!navigator.onLine) {
+      // Integrasi Offline Checking (isOnline & navigator.onLine)
+      if (!isOnline || !navigator.onLine) {
         await saveLocalTransaction(localTx);
         await enqueueTransaction(localTx);
         setProcessing(false);
@@ -896,7 +908,6 @@ function CheckoutModal({
       setProcessing(false);
     }
   };
-
   const showPayment = payMode === 'now';
 
   return (
