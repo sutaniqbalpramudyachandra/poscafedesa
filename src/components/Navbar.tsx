@@ -13,10 +13,15 @@ type NavbarProps = {
   online: boolean;
 };
 
+// =========================================================================
+// PERBAIKAN POIN 1: 
+// Role 'kasir' HANYA diperbolehkan mengakses 'pos' (Kasir) dan 'history' (Riwayat).
+// Dashboard, Menu, Users, dan Setting HANYA untuk 'super_admin'.
+// =========================================================================
 const ALL_NAV_ITEMS: { id: Page; label: string; icon: typeof Coffee; roles: ('super_admin' | 'kasir')[] }[] = [
   { id: 'pos', label: 'Kasir', icon: ShoppingCart, roles: ['super_admin', 'kasir'] },
   { id: 'history', label: 'Riwayat', icon: Receipt, roles: ['super_admin', 'kasir'] },
-  { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['super_admin', 'kasir'] },
+  { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['super_admin'] },
   { id: 'menu', label: 'Menu', icon: BookOpen, roles: ['super_admin'] },
   { id: 'users', label: 'User', icon: Users, roles: ['super_admin'] },
   { id: 'settings', label: 'Setting', icon: SettingsIcon, roles: ['super_admin'] },
@@ -76,6 +81,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
     );
   };
 
+  // Otomatis memfilter menu navigasi sesuai role user yang sedang aktif
   const navItems = ALL_NAV_ITEMS.filter((item) =>
     profile && item.roles.includes(profile.role)
   );
@@ -85,6 +91,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
       <header className="sticky top-0 z-40 bg-cafe-800 text-cream-50 shadow-lg shadow-cafe-900/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
+            {/* Logo & Nama Cafe */}
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl bg-cafe-500 flex items-center justify-center shadow-md overflow-hidden">
                 {logoUrl ? (
@@ -102,6 +109,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
               <div className="hidden sm:block ml-2">{syncBadge()}</div>
             </div>
 
+            {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -128,6 +136,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
               })}
             </nav>
 
+            {/* Profile & Logout (Desktop) */}
             <div className="hidden md:flex items-center gap-2 pl-2 ml-1 border-l border-cafe-700">
               <div className="flex items-center gap-2 px-2 py-1">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center ${profile?.role === 'super_admin' ? 'bg-amber-400 text-cafe-900' : 'bg-blue-400 text-cafe-900'}`}>
@@ -147,6 +156,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
               </button>
             </div>
 
+            {/* Hamburger Button (Mobile) */}
             <button
               className="md:hidden p-2 rounded-lg hover:bg-cafe-700 transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -156,6 +166,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
           </div>
         </div>
 
+        {/* Mobile Dropdown Menu */}
         {mobileMenuOpen && (
           <nav className="md:hidden border-t border-cafe-700 animate-slide-up">
             {navItems.map((item) => {
@@ -209,6 +220,7 @@ export function Navbar({ currentPage, onNavigate, cartCount, cafeName, logoUrl, 
         )}
       </header>
 
+      {/* Bottom Bar Navigation (Mobile) */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-cafe-800 border-t border-cafe-700 flex items-center justify-around pb-safe">
         {navItems.map((item) => {
           const Icon = item.icon;
