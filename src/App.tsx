@@ -30,6 +30,23 @@ export default function App() {
     fetchSettings().then(setSettings);
   }, [settingsKey]);
 
+  // =========================================================================
+  // PERBAIKAN POIN ACCESS GUARD:
+  // Kasir HANYA bisa mengakses 'pos' dan 'history'.
+  // Jika Kasir mencoba buka halaman lain (termasuk 'dashboard'), otomatis di-redirect ke 'pos'.
+  // =========================================================================
+  const canAccess = useCallback((p: Page): boolean => {
+    if (!profile) return false;
+    if (profile.role === 'super_admin') return true;
+    return ['pos', 'history'].includes(p);
+  }, [profile]);
+
+  useEffect(() => {
+    if (profile && !canAccess(page)) {
+      setPage('pos');
+    }
+  }, [profile, page, canAccess]);
+
   const handleTransactionComplete = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setMenuRefreshKey((k) => k + 1);
@@ -78,16 +95,6 @@ export default function App() {
     );
   }
 
-  const canAccess = (p: Page): boolean => {
-    if (profile.role === 'super_admin') return true;
-    return ['pos', 'history', 'dashboard'].includes(p);
-  };
-
-  if (!canAccess(page)) {
-    setPage('pos');
-    return null;
-  }
-
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar
@@ -109,7 +116,11 @@ export default function App() {
           />
         )}
         {page === 'history' && <HistoryPage refreshKey={refreshKey} />}
-        {page === 'dashboard' && <DashboardPage refreshKey={refreshKey} />}
+        
+        {/* Proteksi halaman khusus Super Admin */}
+        {page === 'dashboard' && profile.role === 'super_admin' && (
+          <DashboardPage refreshKey={refreshKey} />
+        )}
         {page === 'menu' && profile.role === 'super_admin' && (
           <MenuManagementPage
             refreshKey={menuRefreshKey}
