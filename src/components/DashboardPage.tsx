@@ -28,7 +28,7 @@ type TransactionItemWithProduct = TransactionItem & {
   products?: {
     buy_price?: number;
   };
-  buy_price?: number; // Jika harga beli disimpan langsung di item
+  buy_price?: number;
 };
 
 export function DashboardPage({ refreshKey }: DashboardPageProps) {
@@ -42,48 +42,72 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
     setLoading(true);
     setError(null);
 
-    // 1. Ambil transaksi yang berstatus 'paid'
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('status', 'paid')
-      .order('created_at', { ascending: false });
+    try {
+      // 1. Ambil transaksi yang berstatus 'paid'
+      const { data: txData, error: txError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('status', 'paid')
+        .order('created_at', { ascending: false });
 
-    if (txError) {
+      if (txError) throw txError;
+
+      const txList = (txData ?? []) as Transaction[];
+      setTransactions(txList);
+
+      if (txList.length === 0) {
+        setItems([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Ambil semua item transaksi
+      const txIds = txList.map((t) => t.id);
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('transaction_items')
+        .select('*')
+        .in('transaction_id', txIds);
+
+      if (itemsError) throw itemsError;
+
+      const rawItems = (itemsData ?? []) as TransactionItem[];
+
+      // 3. Ambil data produk secara terpisah untuk mendapatkan buy_price
+      const productIds = Array.from(
+        new Set(rawItems.map((item) => item.product_id).filter((id): id is string => Boolean(id)))
+      );
+
+      let productMap: Record<string, number> = {};
+      if (productIds.length > 0) {
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('id, buy_price')
+          .in('id', productIds);
+
+        if (!productsError && productsData) {
+          productMap = productsData.reduce((acc, p) => {
+            acc[p.id] = p.buy_price ?? 0;
+            return acc;
+          }, {} as Record<string, number>);
+        }
+      }
+
+      // 4. Gabungkan buy_price ke dalam items
+      const mergedItems: TransactionItemWithProduct[] = rawItems.map((item) => ({
+        ...item,
+        buy_price: (item as any).buy_price ?? (item.product_id ? productMap[item.product_id] : 0) ?? 0,
+        products: {
+          buy_price: item.product_id ? productMap[item.product_id] ?? 0 : 0,
+        },
+      }));
+
+      setItems(mergedItems);
+    } catch (err: any) {
+      console.error('Error fetching dashboard data:', err);
       setError('Gagal memuat data dashboard.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const txList = (txData ?? []) as Transaction[];
-    setTransactions(txList);
-
-    if (txList.length === 0) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-
-    // 2. Ambil detail item beserta harga beli (buy_price) dari relasi produk
-    const txIds = txList.map((t) => t.id);
-    const { data: itemsData, error: itemsError } = await supabase
-      .from('transaction_items')
-      .select(`
-        *,
-        products (
-          buy_price
-        )
-      `)
-      .in('transaction_id', txIds);
-
-    if (itemsError) {
-      setError('Gagal memuat detail item.');
-      setLoading(false);
-      return;
-    }
-
-    setItems((itemsData ?? []) as TransactionItemWithProduct[]);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -103,7 +127,6 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
 
   // Hitung Total HPP (Modal) dari item terjual
   const totalCogs = filteredItems.reduce((s, item) => {
-    // Ambil buy_price dari item atau relasi products
     const buyPrice = item.buy_price ?? item.products?.buy_price ?? 0;
     return s + item.qty * buyPrice;
   }, 0);
@@ -145,7 +168,13 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
           <p className="text-sm text-cafe-500">Pantau performa penjualan dan keuntungan cafe Anda</p>
         </div>
         <div className="flex gap-1.5 bg-white border border-cafe-200 rounded-xl p-1 shadow-sm">
-          {([['7d', '7 Hari'], ['30d', '30 Hari'], ['all', 'Semua']] as [Period, string][]).map(([key, label]) => (
+          {(
+            [
+              ['7d', '7 Hari'],
+              ['30d', '30 Hari'],
+              ['all', 'Semua'],
+            ] as [Period, string][]
+          ).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setPeriod(key)}
@@ -240,7 +269,9 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
                         <p className="font-display font-bold text-cafe-800 text-sm mt-0.5">{formatRupiah(avg)}</p>
                       </div>
                       <div className="bg-green-50 rounded-lg p-3">
-                        <p className="text-[11px] text-green-500 font-medium">Tertinggi{highestDay ? ` (${highestDay.label})` : ''}</p>
+                        <p className="text-[11px] text-green-500 font-medium">
+                          Tertinggi{highestDay ? ` (${highestDay.label})` : ''}
+                        </p>
                         <p className="font-display font-bold text-green-700 text-sm mt-0.5">{formatRupiah(highest)}</p>
                       </div>
                       <div className="bg-amber-50 rounded-lg p-3">
@@ -278,7 +309,9 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
                     <div>
                       <p className="text-xs text-cafe-500">Juara #1</p>
                       <p className="font-display font-bold text-cafe-800">{topSelling[0].productName}</p>
-                      <p className="text-xs text-cafe-500">{topSelling[0].totalQty} terjual · {formatRupiah(topSelling[0].totalRevenue)}</p>
+                      <p className="text-xs text-cafe-500">
+                        {topSelling[0].totalQty} terjual · {formatRupiah(topSelling[0].totalRevenue)}
+                      </p>
                     </div>
                   </div>
                   <HorizontalBarChart
@@ -316,7 +349,9 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
                     <div>
                       <p className="text-xs text-cafe-500">Paling sedikit terjual</p>
                       <p className="font-display font-bold text-cafe-800">{leastSelling[0].productName}</p>
-                      <p className="text-xs text-cafe-500">{leastSelling[0].totalQty} terjual · {formatRupiah(leastSelling[0].totalRevenue)}</p>
+                      <p className="text-xs text-cafe-500">
+                        {leastSelling[0].totalQty} terjual · {formatRupiah(leastSelling[0].totalRevenue)}
+                      </p>
                     </div>
                   </div>
                   <HorizontalBarChart
@@ -345,13 +380,15 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
                 <div className="flex items-start gap-2">
                   <Trophy className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <p className="text-cafe-200">
-                    <span className="font-semibold text-cream-50">{topSelling[0].productName}</span> adalah produk terlaris dengan {topSelling[0].totalQty} unit terjual.
+                    <span className="font-semibold text-cream-50">{topSelling[0].productName}</span> adalah produk
+                    terlaris dengan {topSelling[0].totalQty} unit terjual.
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
                   <TrendingDown className="w-4 h-4 text-red-300 mt-0.5 flex-shrink-0" />
                   <p className="text-cafe-200">
-                    <span className="font-semibold text-cream-50">{leastSelling[0].productName}</span> perlu perhatian, hanya terjual {leastSelling[0].totalQty} unit.
+                    <span className="font-semibold text-cream-50">{leastSelling[0].productName}</span> perlu perhatian,
+                    hanya terjual {leastSelling[0].totalQty} unit.
                   </p>
                 </div>
               </div>
@@ -375,9 +412,7 @@ function filterByPeriod(transactions: Transaction[], period: Period): Transactio
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
   return (
     <div className="bg-white rounded-xl border border-cafe-100 p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-2.5 ${color}`}>
-        {icon}
-      </div>
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-2.5 ${color}`}>{icon}</div>
       <p className="text-[11px] text-cafe-400 font-medium mb-0.5">{label}</p>
       <p className="font-display font-bold text-sm sm:text-base text-cafe-800 truncate">{value}</p>
     </div>
