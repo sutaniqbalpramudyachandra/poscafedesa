@@ -1,0 +1,46 @@
+{
+  "name": "Cafe Desa - Kasir POS",
+  "short_name": "Cafe Desa",
+  "description": "Aplikasi Kasir (Point of Sale) modern untuk Cafe Desa",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6F0",
+  "theme_color": "#6B3C2A",
+  "lang": "id-ID",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Kasir",
+      "short_name": "Kasir",
+      "url": "/?page=pos",
+      "description": "Mulai transaksi baru"
+    },
+    {
+      "name": "Riwayat",
+      "short_name": "Riwayat",
+      "url": "/?page=history",
+      "description": "Lihat riwayat penjualan"
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/?page=dashboard",
+      "description": "Analisis penjualan"
+    }
+  ]
+}
