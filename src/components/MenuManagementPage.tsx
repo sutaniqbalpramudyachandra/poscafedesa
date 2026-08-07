@@ -125,7 +125,7 @@ export function MenuManagementPage({ refreshKey, onMenuChanged }: MenuManagement
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
         <div>
           <h2 className="font-display font-bold text-2xl text-cafe-900 mb-1">Kelola Menu & Stok</h2>
-          <p className="text-sm text-cafe-500">Tambah, edit, atau atur stok produk cafe Anda</p>
+          <p className="text-sm text-cafe-500">Tambah, edit, atau atur stok dan harga modal produk</p>
         </div>
         <button
           onClick={handleAdd}
@@ -216,6 +216,7 @@ export function MenuManagementPage({ refreshKey, onMenuChanged }: MenuManagement
         <div className="space-y-2.5">
           {filtered.map((product) => {
             const stockNum = product.stock ?? 0;
+            const costPrice = product.cost_price ?? 0;
             return (
               <div
                 key={product.id}
@@ -242,11 +243,18 @@ export function MenuManagementPage({ refreshKey, onMenuChanged }: MenuManagement
                     </div>
                     <p className="text-xs text-cafe-400 mt-0.5">{product.category}</p>
                     
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
                       <p className="font-display font-bold text-cafe-700 text-sm">
                         {formatRupiah(product.price)}
                       </p>
+                      
+                      {/* Tampilan HPP */}
+                      <span className="text-xs text-cafe-400">
+                        (Modal: <span className="font-medium text-cafe-600">{formatRupiah(costPrice)}</span>)
+                      </span>
+
                       <span className="text-cafe-300">•</span>
+                      
                       {/* Badge Indikator Stok */}
                       <span
                         className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
@@ -342,6 +350,7 @@ function ProductFormModal({
   const [name, setName] = useState(product?.name ?? '');
   const [category, setCategory] = useState(product?.category ?? 'Kopi');
   const [price, setPrice] = useState(product ? String(product.price) : '');
+  const [costPrice, setCostPrice] = useState(product ? String(product.cost_price ?? 0) : '0'); // Field HPP
   const [stock, setStock] = useState(product ? String(product.stock ?? 0) : '0');
   const [imageUrl, setImageUrl] = useState(product?.image_url ?? '');
   const [customCategory, setCustomCategory] = useState(false);
@@ -355,18 +364,22 @@ function ProductFormModal({
   }, [existingCategories]);
 
   const priceNum = parseInt(price || '0', 10) || 0;
+  const costPriceNum = parseInt(costPrice || '0', 10) || 0;
   const stockNum = parseInt(stock || '0', 10) || 0;
+
+  const profitPerUnit = priceNum - costPriceNum;
 
   const isValid =
     name.trim().length > 0 &&
     priceNum > 0 &&
+    costPriceNum >= 0 &&
     stockNum >= 0 &&
     (customCategory ? newCategory.trim().length > 0 : category.trim().length > 0);
 
   const handleSubmit = async () => {
     setError(null);
     if (!isValid) {
-      setError('Nama, harga (min. Rp 1), stok (min. 0), dan kategori harus diisi.');
+      setError('Nama, harga jual (min. Rp 1), harga modal (min. 0), stok (min. 0), dan kategori harus diisi.');
       return;
     }
 
@@ -377,6 +390,7 @@ function ProductFormModal({
       name: name.trim(),
       category: finalCategory,
       price: priceNum,
+      cost_price: costPriceNum, // Kirim HPP ke Supabase
       stock: stockNum,
       image_url: imageUrl.trim() || null,
     };
@@ -479,36 +493,59 @@ function ProductFormModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-semibold text-cafe-700 mb-2 block">Harga (Rp)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-4 py-3 bg-white border border-cafe-200 rounded-xl text-base font-bold text-cafe-900 focus:outline-none focus:ring-2 focus:ring-cafe-400 focus:border-transparent transition-all"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-cafe-700 mb-2 block">Jumlah Stok</label>
+              <label className="text-sm font-semibold text-cafe-700 mb-2 block">Harga Jual (Rp)</label>
               <input
                 type="number"
                 inputMode="numeric"
-                value={stock}
-                onChange={(e) => setStock(e.target.value)}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="0"
+                className="w-full px-4 py-3 bg-white border border-cafe-200 rounded-xl text-base font-bold text-cafe-900 focus:outline-none focus:ring-2 focus:ring-cafe-400 focus:border-transparent transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-cafe-700 mb-2 block">Harga Modal / HPP (Rp)</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={costPrice}
+                onChange={(e) => setCostPrice(e.target.value)}
                 placeholder="0"
                 className="w-full px-4 py-3 bg-white border border-cafe-200 rounded-xl text-base font-bold text-cafe-900 focus:outline-none focus:ring-2 focus:ring-cafe-400 focus:border-transparent transition-all"
               />
             </div>
           </div>
 
+          <div>
+            <label className="text-sm font-semibold text-cafe-700 mb-2 block">Jumlah Stok</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={stock}
+              onChange={(e) => setStock(e.target.value)}
+              placeholder="0"
+              className="w-full px-4 py-3 bg-white border border-cafe-200 rounded-xl text-base font-bold text-cafe-900 focus:outline-none focus:ring-2 focus:ring-cafe-400 focus:border-transparent transition-all"
+            />
+          </div>
+
           {priceNum > 0 && (
-            <p className="text-xs text-cafe-400">
-              Harga di kasir: <span className="font-semibold text-cafe-600">{formatRupiah(priceNum)}</span>
-            </p>
+            <div className="bg-cafe-100/60 p-3 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between text-cafe-600">
+                <span>Harga Jual:</span>
+                <span className="font-semibold">{formatRupiah(priceNum)}</span>
+              </div>
+              <div className="flex justify-between text-cafe-600">
+                <span>Harga Modal (HPP):</span>
+                <span className="font-semibold">{formatRupiah(costPriceNum)}</span>
+              </div>
+              <div className="flex justify-between font-bold border-t border-cafe-200 pt-1 text-cafe-900">
+                <span>Estimasi Keuntungan/Unit:</span>
+                <span className={profitPerUnit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  {formatRupiah(profitPerUnit)}
+                </span>
+              </div>
+            </div>
           )}
 
           <div>

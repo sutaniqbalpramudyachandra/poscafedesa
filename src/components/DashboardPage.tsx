@@ -13,6 +13,8 @@ import {
   CalendarDays,
   Award,
   AlertCircle,
+  DollarSign,
+  PieChart,
 } from 'lucide-react';
 
 type DashboardPageProps = {
@@ -21,9 +23,17 @@ type DashboardPageProps = {
 
 type Period = '7d' | '30d' | 'all';
 
+// Tipe ekstensi untuk item yang memuat harga beli dari produk
+type TransactionItemWithProduct = TransactionItem & {
+  products?: {
+    buy_price?: number;
+  };
+  buy_price?: number; // Jika harga beli disimpan langsung di item
+};
+
 export function DashboardPage({ refreshKey }: DashboardPageProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [items, setItems] = useState<TransactionItem[]>([]);
+  const [items, setItems] = useState<TransactionItemWithProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('7d');
@@ -32,6 +42,7 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
     setLoading(true);
     setError(null);
 
+    // 1. Ambil transaksi yang berstatus 'paid'
     const { data: txData, error: txError } = await supabase
       .from('transactions')
       .select('*')
@@ -53,10 +64,16 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
       return;
     }
 
+    // 2. Ambil detail item beserta harga beli (buy_price) dari relasi produk
     const txIds = txList.map((t) => t.id);
     const { data: itemsData, error: itemsError } = await supabase
       .from('transaction_items')
-      .select('*')
+      .select(`
+        *,
+        products (
+          buy_price
+        )
+      `)
       .in('transaction_id', txIds);
 
     if (itemsError) {
@@ -65,7 +82,7 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
       return;
     }
 
-    setItems((itemsData ?? []) as TransactionItem[]);
+    setItems((itemsData ?? []) as TransactionItemWithProduct[]);
     setLoading(false);
   }, []);
 
@@ -73,14 +90,26 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
     fetchData();
   }, [fetchData, refreshKey]);
 
+  // Filter transaksi & item berdasarkan periode terpilih
   const filteredTx = filterByPeriod(transactions, period);
   const filteredTxIds = new Set(filteredTx.map((t) => t.id));
   const filteredItems = items.filter((i) => filteredTxIds.has(i.transaction_id));
 
-  const totalRevenue = filteredTx.reduce((s, t) => s + t.total, 0);
+  // --- Perhitungan Keuangan ---
+  const totalRevenue = filteredTx.reduce((s, t) => s + t.total, 0); // Total Omset
   const totalTransactions = filteredTx.length;
   const totalItemsSold = filteredItems.reduce((s, i) => s + i.qty, 0);
   const avgPerTransaction = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
+
+  // Hitung Total HPP (Modal) dari item terjual
+  const totalCogs = filteredItems.reduce((s, item) => {
+    // Ambil buy_price dari item atau relasi products
+    const buyPrice = item.buy_price ?? item.products?.buy_price ?? 0;
+    return s + item.qty * buyPrice;
+  }, 0);
+
+  // Hitung Keuntungan Bersih (Profit)
+  const netProfit = totalRevenue - totalCogs;
 
   const topSelling: ProductSales[] = getTopSelling(filteredItems, 5);
   const leastSelling: ProductSales[] = getLeastSelling(filteredItems, 5);
@@ -113,7 +142,7 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
         <div>
           <h2 className="font-display font-bold text-2xl text-cafe-900 mb-1">Dashboard & Analisis</h2>
-          <p className="text-sm text-cafe-500">Pantau performa penjualan cafe Anda</p>
+          <p className="text-sm text-cafe-500">Pantau performa penjualan dan keuntungan cafe Anda</p>
         </div>
         <div className="flex gap-1.5 bg-white border border-cafe-200 rounded-xl p-1 shadow-sm">
           {([['7d', '7 Hari'], ['30d', '30 Hari'], ['all', 'Semua']] as [Period, string][]).map(([key, label]) => (
@@ -140,12 +169,25 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          {/* STAT CARDS - TERMASUK KEUNTUNGAN BERSIH */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
             <StatCard
               icon={<TrendingUp className="w-5 h-5" />}
-              label="Total Pemasukan"
+              label="Keuntungan Bersih (Profit)"
+              value={formatRupiah(netProfit)}
+              color="bg-emerald-100 text-emerald-700"
+            />
+            <StatCard
+              icon={<DollarSign className="w-5 h-5" />}
+              label="Total Pemasukan (Omset)"
               value={formatRupiah(totalRevenue)}
               color="bg-green-100 text-green-700"
+            />
+            <StatCard
+              icon={<PieChart className="w-5 h-5" />}
+              label="Total Modal (HPP)"
+              value={formatRupiah(totalCogs)}
+              color="bg-red-100 text-red-700"
             />
             <StatCard
               icon={<Receipt className="w-5 h-5" />}
@@ -337,7 +379,7 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
         {icon}
       </div>
       <p className="text-[11px] text-cafe-400 font-medium mb-0.5">{label}</p>
-      <p className="font-display font-bold text-sm text-cafe-800 truncate">{value}</p>
+      <p className="font-display font-bold text-sm sm:text-base text-cafe-800 truncate">{value}</p>
     </div>
   );
 }

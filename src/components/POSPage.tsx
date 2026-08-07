@@ -739,6 +739,7 @@ function CheckoutModal({
         product_name: item.product.name,
         qty: item.qty,
         price: item.product.price,
+        cost_price: item.product.cost_price || 0,
         subtotal: item.product.price * item.qty,
       }));
 

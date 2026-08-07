@@ -16,6 +16,7 @@ export type Product = {
   name: string;
   category: string;
   price: number;
+  cost_price?: number; // <--- DITAMBAHKAN: Harga beli / HPP modal produk
   image_url: string | null;
   is_active: boolean;
   stock: number;
@@ -42,7 +43,11 @@ export type TransactionItem = {
   product_name: string;
   qty: number;
   price: number;
+  cost_price?: number; // <--- DITAMBAHKAN: Snaphot modal saat transaksi dibuat
   subtotal: number;
+  products?: {        // <--- DITAMBAHKAN: Opsional untuk join query Supabase
+    cost_price?: number;
+  };
 };
 
 export type TransactionWithItems = Transaction & {
