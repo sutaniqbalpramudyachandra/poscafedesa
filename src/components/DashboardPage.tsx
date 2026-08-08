@@ -3,19 +3,8 @@ import { supabase, type Transaction, type TransactionItem } from '@/lib/supabase
 import { formatRupiah, formatNumber } from '@/lib/format';
 import { getTopSelling, getLeastSelling, aggregateDailyRevenue, type ProductSales, type DailyRevenue } from '@/lib/analytics';
 import { HorizontalBarChart, LineChart } from './Charts';
-import {
-  TrendingUp,
-  Receipt,
-  Inbox,
-  Trophy,
-  TrendingDown,
-  Loader2,
-  CalendarDays,
-  Award,
-  AlertCircle,
-  DollarSign,
-  PieChart,
-} from 'lucide-react';
+import { getUnsyncedLocalTransactions } from '@/lib/db';
+import { TrendingUp, Receipt, Inbox, Trophy, TrendingDown, Loader as Loader2, CalendarDays, Award, CircleAlert as AlertCircle, DollarSign, ChartPie as PieChart, CloudOff } from 'lucide-react';
 
 type DashboardPageProps = {
   refreshKey: number;
@@ -42,6 +31,45 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
     setLoading(true);
     setError(null);
 
+    // Always merge in unsynced local transactions (offline queue)
+    const localTxList = await getUnsyncedLocalTransactions().catch(() => []);
+    const localAsTx: Transaction[] = localTxList
+      .filter((ltx) => ltx.status === 'paid')
+      .map((ltx) => ({
+        id: ltx.localId,
+        invoice_no: ltx.invoice_no,
+        payment_method: ltx.payment_method as 'Tunai' | 'QRIS',
+        subtotal: ltx.subtotal,
+        total: ltx.total,
+        amount_paid: ltx.amount_paid,
+        change: ltx.change,
+        status: ltx.status as 'paid' | 'unpaid' | 'cancelled',
+        table_number: ltx.table_number,
+        created_at: ltx.created_at,
+      }));
+    const localItems: TransactionItemWithProduct[] = localTxList.flatMap((ltx) =>
+      ltx.items.map((it, idx) => ({
+        id: `${ltx.localId}-${idx}`,
+        transaction_id: ltx.localId,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        qty: it.qty,
+        price: it.price,
+        cost_price: it.cost_price,
+        subtotal: it.subtotal,
+        buy_price: it.cost_price ?? 0,
+        products: { buy_price: it.cost_price ?? 0 },
+      }))
+    );
+
+    if (!navigator.onLine) {
+      // Offline: use only local transactions
+      setTransactions(localAsTx.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setItems(localItems);
+      setLoading(false);
+      return;
+    }
+
     try {
       // 1. Ambil transaksi yang berstatus 'paid'
       const { data: txData, error: txError } = await supabase
@@ -52,25 +80,31 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
 
       if (txError) throw txError;
 
-      const txList = (txData ?? []) as Transaction[];
-      setTransactions(txList);
+      const serverTxList = (txData ?? []) as Transaction[];
+      // Merge: only include local transactions not already in the server list
+      const serverIds = new Set(serverTxList.map((t) => t.id));
+      const mergedTx = [...serverTxList, ...localAsTx.filter((t) => !serverIds.has(t.id))];
+      mergedTx.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setTransactions(mergedTx);
 
-      if (txList.length === 0) {
+      if (mergedTx.length === 0) {
         setItems([]);
         setLoading(false);
         return;
       }
 
-      // 2. Ambil semua item transaksi
-      const txIds = txList.map((t) => t.id);
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('transaction_items')
-        .select('*')
-        .in('transaction_id', txIds);
+      // 2. Ambil semua item transaksi dari server
+      const serverTxIds = serverTxList.map((t) => t.id);
+      let rawItems: TransactionItem[] = [];
+      if (serverTxIds.length > 0) {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from('transaction_items')
+          .select('*')
+          .in('transaction_id', serverTxIds);
 
-      if (itemsError) throw itemsError;
-
-      const rawItems = (itemsData ?? []) as TransactionItem[];
+        if (itemsError) throw itemsError;
+        rawItems = (itemsData ?? []) as TransactionItem[];
+      }
 
       // 3. Ambil data produk secara terpisah untuk mendapatkan buy_price
       const productIds = Array.from(
@@ -93,7 +127,7 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
       }
 
       // 4. Gabungkan buy_price ke dalam items
-      const mergedItems: TransactionItemWithProduct[] = rawItems.map((item) => ({
+      const serverMergedItems: TransactionItemWithProduct[] = rawItems.map((item) => ({
         ...item,
         buy_price: (item as any).buy_price ?? (item.product_id ? productMap[item.product_id] : 0) ?? 0,
         products: {
@@ -101,10 +135,16 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
         },
       }));
 
-      setItems(mergedItems);
+      setItems([...serverMergedItems, ...localItems]);
     } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
-      setError('Gagal memuat data dashboard.');
+      // Fallback to local data on error
+      if (localAsTx.length > 0) {
+        setTransactions(localAsTx);
+        setItems(localItems);
+      } else {
+        setError('Gagal memuat data dashboard.');
+      }
     } finally {
       setLoading(false);
     }
@@ -160,12 +200,20 @@ export function DashboardPage({ refreshKey }: DashboardPageProps) {
     );
   }
 
+  const offlineTxCount = transactions.filter((t) => t.id.startsWith('local-')).length;
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
         <div>
           <h2 className="font-display font-bold text-2xl text-cafe-900 mb-1">Dashboard & Analisis</h2>
           <p className="text-sm text-cafe-500">Pantau performa penjualan dan keuntungan cafe Anda</p>
+          {offlineTxCount > 0 && (
+            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1.5">
+              <CloudOff className="w-3.5 h-3.5" />
+              {offlineTxCount} transaksi belum tersinkronisasi
+            </p>
+          )}
         </div>
         <div className="flex gap-1.5 bg-white border border-cafe-200 rounded-xl p-1 shadow-sm">
           {(

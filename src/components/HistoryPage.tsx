@@ -4,23 +4,8 @@ import { formatRupiah, formatDateTime } from '@/lib/format';
 import { exportToCSV, exportToExcel } from '@/lib/export';
 import { generateReceiptDataURL, downloadReceiptImage } from '@/lib/receipt';
 import { fetchSettings, getDefaultSettings } from '@/lib/settings';
-import {
-  Receipt,
-  Search,
-  FileSpreadsheet,
-  FileDown,
-  ChevronDown,
-  ChevronRight,
-  Download,
-  X,
-  Banknote,
-  QrCode,
-  Loader2,
-  Calendar,
-  TrendingUp,
-  Inbox,
-  Eye,
-} from 'lucide-react';
+import { getUnsyncedLocalTransactions } from '@/lib/db';
+import { Receipt, Search, FileSpreadsheet, FileDown, ChevronDown, ChevronRight, Download, X, Banknote, QrCode, Loader as Loader2, Calendar, TrendingUp, Inbox, Eye, CloudOff } from 'lucide-react';
 
 type HistoryPageProps = {
   refreshKey: number;
@@ -39,6 +24,38 @@ export function HistoryPage({ refreshKey }: HistoryPageProps) {
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     setError(null);
+
+    // Always merge in unsynced local transactions (offline queue)
+    const localTxList = await getUnsyncedLocalTransactions().catch(() => []);
+    const localAsFull: TransactionWithItems[] = localTxList.map((ltx) => ({
+      id: ltx.localId,
+      invoice_no: ltx.invoice_no,
+      payment_method: ltx.payment_method as 'Tunai' | 'QRIS',
+      subtotal: ltx.subtotal,
+      total: ltx.total,
+      amount_paid: ltx.amount_paid,
+      change: ltx.change,
+      status: ltx.status as 'paid' | 'unpaid' | 'cancelled',
+      table_number: ltx.table_number,
+      created_at: ltx.created_at,
+      items: ltx.items.map((it, idx) => ({
+        id: `${ltx.localId}-${idx}`,
+        transaction_id: ltx.localId,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        qty: it.qty,
+        price: it.price,
+        cost_price: it.cost_price,
+        subtotal: it.subtotal,
+      })),
+    }));
+
+    if (!navigator.onLine) {
+      setTransactions(localAsFull.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
@@ -47,42 +64,49 @@ export function HistoryPage({ refreshKey }: HistoryPageProps) {
       .limit(500);
 
     if (error) {
-      setError('Gagal memuat riwayat transaksi.');
+      if (localAsFull.length > 0) {
+        setTransactions(localAsFull);
+      } else {
+        setError('Gagal memuat riwayat transaksi.');
+      }
       setLoading(false);
       return;
     }
 
-    if (!data || data.length === 0) {
-      setTransactions([]);
-      setLoading(false);
-      return;
+    const txIds = (data ?? []).map((t) => t.id);
+    let itemsByTx = new Map<string, TransactionItem[]>();
+
+    if (txIds.length > 0) {
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('transaction_items')
+        .select('*')
+        .in('transaction_id', txIds);
+
+      if (itemsError) {
+        setError('Gagal memuat detail item transaksi.');
+        setLoading(false);
+        return;
+      }
+
+      itemsByTx = new Map<string, TransactionItem[]>();
+      for (const item of itemsData as TransactionItem[]) {
+        const arr = itemsByTx.get(item.transaction_id) ?? [];
+        arr.push(item);
+        itemsByTx.set(item.transaction_id, arr);
+      }
     }
 
-    const txIds = data.map((t) => t.id);
-    const { data: itemsData, error: itemsError } = await supabase
-      .from('transaction_items')
-      .select('*')
-      .in('transaction_id', txIds);
-
-    if (itemsError) {
-      setError('Gagal memuat detail item transaksi.');
-      setLoading(false);
-      return;
-    }
-
-    const itemsByTx = new Map<string, TransactionItem[]>();
-    for (const item of itemsData as TransactionItem[]) {
-      const arr = itemsByTx.get(item.transaction_id) ?? [];
-      arr.push(item);
-      itemsByTx.set(item.transaction_id, arr);
-    }
-
-    const full: TransactionWithItems[] = data.map((t) => ({
+    const full: TransactionWithItems[] = (data ?? []).map((t) => ({
       ...(t as TransactionWithItems),
       items: itemsByTx.get(t.id) ?? [],
     }));
 
-    setTransactions(full);
+    // Merge: only include local transactions that aren't already in the server list
+    const serverIds = new Set(full.map((t) => t.id));
+    const merged = [...full, ...localAsFull.filter((t) => !serverIds.has(t.id))];
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setTransactions(merged);
     setLoading(false);
   }, []);
 
@@ -112,6 +136,12 @@ export function HistoryPage({ refreshKey }: HistoryPageProps) {
         <div>
           <h2 className="font-display font-bold text-2xl text-cafe-900 mb-1">Riwayat Penjualan</h2>
           <p className="text-sm text-cafe-500">Semua transaksi yang sudah dibayar tercatat di sini</p>
+          {transactions.some((t) => t.id.startsWith('local-')) && (
+            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1.5">
+              <CloudOff className="w-3.5 h-3.5" />
+              {transactions.filter((t) => t.id.startsWith('local-')).length} transaksi belum tersinkronisasi
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -228,6 +258,12 @@ export function HistoryPage({ refreshKey }: HistoryPageProps) {
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tx.payment_method === 'Tunai' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                         {tx.payment_method}
                       </span>
+                      {tx.id.startsWith('local-') && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          <CloudOff className="w-3 h-3" />
+                          Belum Sync
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-cafe-400 mt-0.5">{formatDateTime(tx.created_at)}</p>
                     <p className="text-xs text-cafe-500 mt-0.5">

@@ -156,6 +156,13 @@ export async function getLocalTransactions(): Promise<LocalTransaction[]> {
   return tx(STORE_TX, 'readonly', (s) => s.getAll());
 }
 
+export async function getUnsyncedLocalTransactions(): Promise<LocalTransaction[]> {
+  const all = await getLocalTransactions();
+  return all
+    .filter((t) => !t.synced)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
 export async function markLocalTransactionSynced(localId: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
