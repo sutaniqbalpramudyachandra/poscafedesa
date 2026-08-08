@@ -54,8 +54,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, tra
             {/* Header Toko */}
             <div className="text-center mb-4 break-words whitespace-normal">
               <h2 className="text-xl font-bold uppercase tracking-wide">CAFE DESA</h2>
-              <p className="text-xs text-slate-500 mt-1">Jl. Raya Desa No. 123, Kabupaten Kasir</p>
-              <p className="text-xs text-slate-500">Telp/WA: 0812-3456-7890</p>
+              <p className="text-xs text-slate-500 mt-1">Jalan Gatot Subroto, Kel Paya Kumang, Kec Delta Pawan Kab Ketapang</p>
+              <p className="text-xs text-slate-500">Telp/WA: +62 895-1918-1333</p>
             </div>
 
             <div className="border-t border-b border-dashed border-slate-300 py-2 my-2 text-xs text-slate-600 space-y-1">
